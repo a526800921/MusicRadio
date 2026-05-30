@@ -99,4 +99,35 @@ describe('Player', () => {
     const audio = container.querySelector('audio');
     expect(audio).not.toBeNull();
   });
+
+  it('renders hidden audio for ttsUrl voiceover', () => {
+    const { container } = render(
+      <Player
+        songUrl="https://example.com/song.mp3"
+        songName="晴天"
+        artist="周杰伦"
+        reason=""
+        segue=""
+        ttsUrl="/api/tts/abc123"
+      />
+    );
+    const audios = container.querySelectorAll('audio');
+    expect(audios.length).toBe(2); // song audio + voiceover audio
+    expect(audios[1].className).toContain('hidden');
+  });
+
+  it('does not render voiceover audio without ttsUrl', () => {
+    const { container } = render(
+      <Player
+        songUrl="https://example.com/song.mp3"
+        songName="晴天"
+        artist="周杰伦"
+        reason=""
+        segue=""
+        ttsUrl={null}
+      />
+    );
+    const audios = container.querySelectorAll('audio');
+    expect(audios.length).toBe(1);
+  });
 });

@@ -19,5 +19,6 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
   const stream = fs.createReadStream(filePath);
+  stream.on('error', () => { if (!res.headersSent) res.status(500).end(); });
   stream.pipe(res);
 }

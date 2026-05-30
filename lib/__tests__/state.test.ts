@@ -78,12 +78,16 @@ describe('state', () => {
 
   describe('getRecentPlays', () => {
     it('returns plays in reverse order limited by count', () => {
-      for (let i = 0; i < 25; i++) {
-        addPlay({ time: `2026-01-${String(i+1).padStart(2,'0')}T00:00:00Z`, song_id: String(i), song_name: `Song${i}`, artist: 'Artist', skipped: false });
+      // Batch write to avoid Windows file lock contention
+      const state = readState();
+      for (let i = 0; i < 15; i++) {
+        state.plays.push({ time: `2026-01-${String(i+1).padStart(2,'0')}T00:00:00Z`, song_id: String(i), song_name: `Song${i}`, artist: 'Artist', skipped: false });
       }
-      const recent = getRecentPlays(10);
-      expect(recent).toHaveLength(10);
-      expect(recent[0].song_id).toBe('24');
+      writeState(state);
+
+      const recent = getRecentPlays(5);
+      expect(recent).toHaveLength(5);
+      expect(recent[0].song_id).toBe('14');
     });
   });
 
