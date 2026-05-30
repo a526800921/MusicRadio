@@ -39,16 +39,16 @@ export async function generateTTS(text: string): Promise<string> {
 function synthesizeWindows(text: string, outputFile: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const safeText = text.replace(/"/g, '`"').replace(/\$/g, '`$');
-    const safePath = outputFile.replace(/\\/g, '\\\\');
+    // PowerShell uses backtick as escape char, backslash is literal — no need to double
 
     const psCode =
 `Add-Type -AssemblyName System.Speech
 $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
 $zh = $synth.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'zh-*' } | Select-Object -First 1
 if ($zh) { $synth.SelectVoice($zh.VoiceInfo.Name) }
-$dir = Split-Path "${safePath}" -Parent
+$dir = Split-Path "${outputFile}" -Parent
 if ($dir -and !(Test-Path $dir)) { New-Item -Force -ItemType Directory $dir | Out-Null }
-$synth.SetOutputToWaveFile("${safePath}")
+$synth.SetOutputToWaveFile("${outputFile}")
 $synth.Speak("${safeText}")
 $synth.Dispose()
 `;
@@ -56,10 +56,13 @@ $synth.Dispose()
     const tmpScript = join(tmpdir(), `tts-${randomUUID()}.ps1`);
     fs.writeFileSync(tmpScript, '﻿' + psCode, 'utf-8'); // UTF-8 with BOM
 
+    // Use forward slashes — PowerShell accepts them, avoids spawn backslash escaping
+    const psPath = tmpScript.replace(/\\/g, '/');
+
     const child = spawn('powershell', [
       '-NoProfile',
       '-ExecutionPolicy', 'Bypass',
-      '-File', tmpScript,
+      '-File', psPath,
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
