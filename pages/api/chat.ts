@@ -4,6 +4,7 @@ import { assembleContext } from '@/lib/context';
 import { buildPrompt, callClaude } from '@/lib/claude';
 import { addPlay, addMessage } from '@/lib/state';
 import { searchSongs, getSongUrlWithInfo } from '@/lib/netease';
+import { generateTTS } from '@/lib/tts';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -52,7 +53,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log('[CLAUDE] 推荐理由:', output.reason);
     console.log('[CLAUDE] 转场语:', output.segue);
 
-    // 4. Search Netease for the real song
+    // 4. Generate TTS for DJ voiceover (non-blocking, fire and forget)
+    const ttsPromise = generateTTS(output.say).catch((e) => {
+      console.log('[TTS] 生成失败:', e.message);
+      return null;
+    });
+
+    // 5. Search Netease for the real song
     const keyword = `${output.play.song_name} ${output.play.artist}`.trim();
     console.log('[NETEASE] 搜索歌曲...', keyword);
     const songs = await searchSongs(keyword, 5);
@@ -94,10 +101,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     addMessage({ role: 'user', content: message, time: new Date().toISOString() });
     addMessage({ role: 'assistant', content: output.say, time: new Date().toISOString() });
 
-    // 6. Return
+    // 7. Return
+    const ttsUrl = await ttsPromise;
     console.log('[DONE] 响应已返回\n');
     res.status(200).json({
       say: output.say,
+      ttsUrl: ttsUrl || null,
       play: {
         id: matchedSong.id,
         name: matchedSong.name,

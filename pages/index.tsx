@@ -9,6 +9,7 @@ interface SongData {
   name: string;
   artist: string;
   url: string | null;
+  ttsUrl: string | null;
   reason: string;
   segue: string;
 }
@@ -20,7 +21,7 @@ interface PlayRecord {
   skipped: boolean;
 }
 
-const emptySong: SongData = { name: '', artist: '', url: null, reason: '', segue: '' };
+const emptySong: SongData = { name: '', artist: '', url: null, ttsUrl: null, reason: '', segue: '' };
 
 export default function Home() {
   const [song, setSong] = useState<SongData>(emptySong);
@@ -52,6 +53,7 @@ export default function Home() {
         name: data.play.name,
         artist: data.play.artist,
         url: data.play.url,
+        ttsUrl: data.ttsUrl || null,
         reason: data.reason,
         segue: data.segue,
       };
@@ -184,6 +186,7 @@ export default function Home() {
               artist={song.artist}
               reason={song.reason}
               segue={song.segue}
+              ttsUrl={song.ttsUrl}
               onEnded={handleEnded}
               isLoading={autoLoading}
             />
