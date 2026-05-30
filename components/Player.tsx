@@ -6,9 +6,11 @@ interface PlayerProps {
   artist: string;
   reason: string;
   segue: string;
+  onEnded?: () => void;
+  isLoading?: boolean;
 }
 
-export function Player({ songUrl, songName, artist, reason, segue }: PlayerProps) {
+export function Player({ songUrl, songName, artist, reason, segue, onEnded, isLoading }: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +39,7 @@ export function Player({ songUrl, songName, artist, reason, segue }: PlayerProps
 
   return (
     <div className="bg-gray-800 rounded-lg p-6">
-      <audio ref={audioRef} controls className="w-full mb-4">
+      <audio ref={audioRef} controls className="w-full mb-4" onEnded={onEnded}>
         <source src={songUrl} type="audio/mpeg" />
       </audio>
 
@@ -53,6 +55,9 @@ export function Player({ songUrl, songName, artist, reason, segue }: PlayerProps
       )}
       {segue && (
         <p className="text-gray-500 text-sm italic">{segue}</p>
+      )}
+      {isLoading && (
+        <p className="text-purple-400 text-sm mt-2 animate-pulse">Claudio 正在为你挑选下一首...</p>
       )}
       {error && (
         <p className="text-yellow-400 text-sm mt-2">{error}</p>

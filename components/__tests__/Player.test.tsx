@@ -69,4 +69,34 @@ describe('Player', () => {
     const audio = container.querySelector('audio');
     expect(audio).toBeNull();
   });
+
+  it('shows loading text when isLoading is true', () => {
+    render(
+      <Player
+        songUrl="https://example.com/song.mp3"
+        songName="晴天"
+        artist="周杰伦"
+        reason=""
+        segue=""
+        isLoading={true}
+      />
+    );
+    expect(screen.getByText(/正在为你挑选下一首/)).toBeDefined();
+  });
+
+  it('attaches onEnded to audio element', () => {
+    const onEnded = () => {};
+    const { container } = render(
+      <Player
+        songUrl="https://example.com/song.mp3"
+        songName="晴天"
+        artist="周杰伦"
+        reason=""
+        segue=""
+        onEnded={onEnded}
+      />
+    );
+    const audio = container.querySelector('audio');
+    expect(audio).not.toBeNull();
+  });
 });

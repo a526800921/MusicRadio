@@ -25,11 +25,16 @@ const emptySong: SongData = { name: '', artist: '', url: null, reason: '', segue
 export default function Home() {
   const [song, setSong] = useState<SongData>(emptySong);
   const [isLoading, setIsLoading] = useState(false);
+  const [autoLoading, setAutoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<PlayRecord[]>([]);
 
-  const handleSubmit = useCallback(async (message: string) => {
-    setIsLoading(true);
+  const requestSong = useCallback(async (message: string, isAuto: boolean) => {
+    if (isAuto) {
+      setAutoLoading(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
     try {
       const res = await fetch('/api/chat', {
@@ -44,7 +49,6 @@ export default function Home() {
         return;
       }
 
-      // Handle CONTROL and SEARCH intents
       if (data.type === 'CONTROL') {
         setError('播放控制功能即将推出');
         return;
@@ -54,7 +58,6 @@ export default function Home() {
         return;
       }
 
-      // AI recommendation result
       setSong({
         name: data.play.name,
         artist: data.play.artist,
@@ -76,8 +79,17 @@ export default function Home() {
       setError(e.message || '网络请求失败');
     } finally {
       setIsLoading(false);
+      setAutoLoading(false);
     }
   }, []);
+
+  const handleSubmit = useCallback((message: string) => {
+    requestSong(message, false);
+  }, [requestSong]);
+
+  const handleEnded = useCallback(() => {
+    requestSong('再来一首，风格跟前一首类似或者互补', true);
+  }, [requestSong]);
 
   return (
     <>
@@ -108,6 +120,8 @@ export default function Home() {
               artist={song.artist}
               reason={song.reason}
               segue={song.segue}
+              onEnded={handleEnded}
+              isLoading={autoLoading}
             />
           </div>
 
