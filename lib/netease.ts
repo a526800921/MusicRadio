@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import {
   cloudsearch,
   song_url_v1,
@@ -18,9 +20,23 @@ export interface SongUrlInfo {
   artist: string;
 }
 
+function getCookie(): string {
+  // Priority: env var > cookie file > empty
+  if (process.env.NETEASE_COOKIE) return process.env.NETEASE_COOKIE;
+
+  const cookieFile = path.join(process.cwd(), 'data', 'netease-cookie.txt');
+  try {
+    if (fs.existsSync(cookieFile)) {
+      return fs.readFileSync(cookieFile, 'utf-8').trim();
+    }
+  } catch { /* ignore */ }
+
+  return '';
+}
+
 export async function searchSongs(keyword: string, limit = 10): Promise<SongInfo[]> {
   try {
-    const result = await cloudsearch({ keywords: keyword, limit });
+    const result = await cloudsearch({ keywords: keyword, limit, cookie: getCookie() });
     return formatSearchResult(result.body);
   } catch {
     return [];
@@ -40,7 +56,7 @@ export function formatSearchResult(data: any): SongInfo[] {
 
 export async function getSongUrl(songId: string): Promise<string | null> {
   try {
-    const result = await song_url_v1({ id: songId, level: 'standard' });
+    const result = await song_url_v1({ id: songId, level: 'standard', cookie: getCookie() });
     return result?.body?.data?.[0]?.url || null;
   } catch {
     return null;
@@ -59,7 +75,7 @@ export async function getSongUrlWithInfo(
 
 export async function getLyric(songId: string): Promise<string | null> {
   try {
-    const result = await lyric({ id: songId });
+    const result = await lyric({ id: songId, cookie: getCookie() });
     return result?.body?.lrc?.lyric || result?.lrc?.lyric || null;
   } catch {
     return null;
