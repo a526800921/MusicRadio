@@ -1,0 +1,104 @@
+import { spawn } from 'child_process';
+
+export interface ClaudeOutput {
+  say: string;
+  play: { song_id: string; song_name: string; artist: string };
+  reason: string;
+  segue: string;
+}
+
+export interface PromptInput {
+  persona: string;
+  userContext: string;
+  timeContext: string;
+  recentHistory: string;
+  userInput: string;
+}
+
+export function buildPrompt(input: PromptInput): string {
+  return [
+    input.persona,
+    '',
+    '## 用户画像',
+    input.userContext,
+    '',
+    '## 当前上下文',
+    input.timeContext,
+    '',
+    '## 最近播放',
+    input.recentHistory,
+    '',
+    '## 用户请求',
+    input.userInput,
+  ].join('\n');
+}
+
+export function parseClaudeOutput(raw: string): ClaudeOutput {
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('无法解析 Claude 输出：未找到 JSON');
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    throw new Error('无法解析 Claude 输出：JSON 格式错误');
+  }
+
+  if (!parsed.say || !parsed.play?.song_id || !parsed.play?.song_name || !parsed.play?.artist) {
+    throw new Error('无法解析 Claude 输出：缺少必要字段 (say, play.song_id, play.song_name, play.artist)');
+  }
+
+  return {
+    say: parsed.say,
+    play: {
+      song_id: String(parsed.play.song_id),
+      song_name: parsed.play.song_name,
+      artist: parsed.play.artist,
+    },
+    reason: parsed.reason || '',
+    segue: parsed.segue || '',
+  };
+}
+
+export function callClaude(prompt: string, timeout = 60000): Promise<ClaudeOutput> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('claude', ['-p', prompt], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('Claude 调用超时'));
+    }, timeout);
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        reject(new Error(`Claude 进程退出码 ${code}: ${stderr}`));
+        return;
+      }
+      try {
+        resolve(parseClaudeOutput(stdout));
+      } catch (e: any) {
+        reject(new Error(`Claude 输出解析失败: ${e.message}\n输出: ${stdout.slice(0, 500)}`));
+      }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(new Error(`无法启动 Claude CLI: ${err.message}`));
+    });
+  });
+}
