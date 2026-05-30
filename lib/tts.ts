@@ -1,7 +1,9 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 const CACHE_DIR = path.join(process.cwd(), 'cache', 'tts');
 
@@ -36,7 +38,6 @@ export async function generateTTS(text: string): Promise<string> {
 
 function synthesizeWindows(text: string, outputFile: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Embed text and path in PowerShell script, encode as UTF-16LE base64
     const safeText = text.replace(/"/g, '`"').replace(/\$/g, '`$');
     const safePath = outputFile.replace(/\\/g, '\\\\');
 
@@ -52,18 +53,13 @@ $synth.Speak("${safeText}")
 $synth.Dispose()
 `;
 
-    // Encode as UTF-16LE base64 for PowerShell -EncodedCommand
-    const utf16le = Buffer.alloc(psCode.length * 2 + 2);
-    utf16le.writeUInt16LE(0xFEFF, 0); // BOM
-    for (let i = 0; i < psCode.length; i++) {
-      utf16le.writeUInt16LE(psCode.charCodeAt(i), 2 + i * 2);
-    }
-    const b64 = utf16le.toString('base64');
+    const tmpScript = join(tmpdir(), `tts-${randomUUID()}.ps1`);
+    fs.writeFileSync(tmpScript, '﻿' + psCode, 'utf-8'); // UTF-8 with BOM
 
     const child = spawn('powershell', [
       '-NoProfile',
       '-ExecutionPolicy', 'Bypass',
-      '-EncodedCommand', b64,
+      '-File', tmpScript,
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -76,11 +72,13 @@ $synth.Dispose()
 
     const timer = setTimeout(() => {
       child.kill();
+      try { fs.unlinkSync(tmpScript); } catch {}
       reject(new Error('TTS 合成超时'));
     }, 30000);
 
     child.on('close', (code: number) => {
       clearTimeout(timer);
+      try { fs.unlinkSync(tmpScript); } catch {}
       if (code !== 0) {
         console.error('[TTS] PowerShell exit:', code);
         console.error('[TTS] stderr:', stderr.slice(0, 300));
@@ -89,7 +87,6 @@ $synth.Dispose()
       }
       if (!fs.existsSync(outputFile)) {
         console.error('[TTS] 文件未生成:', outputFile);
-        console.error('[TTS] stdout:', stdout.slice(0, 300));
         reject(new Error('TTS 音频文件未生成'));
         return;
       }
