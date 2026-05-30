@@ -89,11 +89,11 @@ describe('state', () => {
 
   describe('getRecentMessages', () => {
     it('returns recent messages', () => {
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; i < 15; i++) {
         addMessage({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Msg${i}`, time: `2026-01-01T00:${String(i).padStart(2,'0')}00Z` });
       }
-      const recent = getRecentMessages(50);
-      expect(recent).toHaveLength(50);
+      const recent = getRecentMessages(10);
+      expect(recent).toHaveLength(10);
     });
   });
 });

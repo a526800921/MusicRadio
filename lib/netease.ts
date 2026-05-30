@@ -1,4 +1,8 @@
-const NETEASE_BASE = process.env.NETEASE_API_URL || 'http://localhost:3000';
+import {
+  cloudsearch,
+  song_url_v1,
+  lyric,
+} from 'NeteaseCloudMusicApi';
 
 export interface SongInfo {
   id: string;
@@ -16,11 +20,8 @@ export interface SongUrlInfo {
 
 export async function searchSongs(keyword: string, limit = 10): Promise<SongInfo[]> {
   try {
-    const res = await fetch(
-      `${NETEASE_BASE}/search?keywords=${encodeURIComponent(keyword)}&limit=${limit}`
-    );
-    const data = await res.json();
-    return formatSearchResult(data);
+    const result = await cloudsearch({ keywords: keyword, limit });
+    return formatSearchResult(result.body);
   } catch {
     return [];
   }
@@ -39,9 +40,8 @@ export function formatSearchResult(data: any): SongInfo[] {
 
 export async function getSongUrl(songId: string): Promise<string | null> {
   try {
-    const res = await fetch(`${NETEASE_BASE}/song/url/v1?id=${songId}&level=standard`);
-    const data = await res.json();
-    return data?.data?.[0]?.url || null;
+    const result = await song_url_v1({ id: songId, level: 'standard' });
+    return result?.body?.data?.[0]?.url || null;
   } catch {
     return null;
   }
@@ -59,9 +59,8 @@ export async function getSongUrlWithInfo(
 
 export async function getLyric(songId: string): Promise<string | null> {
   try {
-    const res = await fetch(`${NETEASE_BASE}/lyric?id=${songId}`);
-    const data = await res.json();
-    return data?.lrc?.lyric || null;
+    const result = await lyric({ id: songId });
+    return result?.body?.lrc?.lyric || result?.lrc?.lyric || null;
   } catch {
     return null;
   }
