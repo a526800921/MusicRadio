@@ -1,11 +1,11 @@
 import fs from 'fs';
 import path from 'path';
-import { createHash } from 'crypto';
-import https from 'https';
+import { createHash, randomUUID } from 'crypto';
+import WebSocket from 'ws';
 
 const CACHE_DIR = path.join(process.cwd(), 'cache', 'tts');
 const VOICE = 'zh-CN-XiaoxiaoNeural';
-const TTS_URL = 'speech.platform.bing.com';
+const WSS_URL = 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4';
 
 function textHash(text: string): string {
   return createHash('md5').update(text).digest('hex');
@@ -31,57 +31,104 @@ export async function generateTTS(text: string): Promise<string> {
 
   const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN">
     <voice name="${VOICE}">
-      <mstts:express-as style="chat" styledegree="1.5">
-        <prosody rate="+10%" pitch="+0%">${text}</prosody>
-      </mstts:express-as>
+      <prosody rate="+10%" pitch="+0%">${text}</prosody>
     </voice>
   </speak>`;
 
-  await downloadTTS(ssml, mp3File);
+  await downloadViaWS(ssml, mp3File);
   const size = (fs.statSync(mp3File).size / 1024).toFixed(1);
   console.log('[TTS] 合成完成:', hash, `(${size}KB)`);
   return `/api/tts/${hash}`;
 }
 
-function downloadTTS(ssml: string, outputFile: string): Promise<void> {
+function downloadViaWS(ssml: string, outputFile: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: TTS_URL,
-      path: '/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4',
-      method: 'POST',
+    const ws = new WebSocket(WSS_URL, {
       headers: {
-        'Content-Type': 'application/ssml+xml',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
         'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
       },
-    }, (res) => {
-      if (res.statusCode !== 200) {
-        let body = '';
-        res.on('data', (c: Buffer) => { body += c.toString(); });
-        res.on('end', () => {
-          console.error('[TTS] HTTP Error', res.statusCode, body.slice(0, 200));
-          reject(new Error(`Edge TTS returned ${res.statusCode}`));
-        });
+    });
+
+    const chunks: Buffer[] = [];
+    const reqId = randomUUID();
+    let configSent = false;
+
+    ws.on('open', () => {
+      // Send config message
+      const config = {
+        context: {
+          synthesis: {
+            audio: {
+              metadataoptions: { sentenceBoundaryEnabled: false, wordBoundaryEnabled: false },
+              outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
+            },
+          },
+        },
+      };
+      ws.send(
+        `X-RequestId:${reqId}\r\nContent-Type:application/json; charset=utf-8\r\nPath:ssml\r\n\r\n` +
+        JSON.stringify(config)
+      );
+      configSent = true;
+    });
+
+    ws.on('message', (data: Buffer, isBinary: boolean) => {
+      if (!isBinary) {
+        // Text messages contain metadata headers, skip
+        const text = data.toString();
+        if (text.includes('Path:turn.end')) {
+          // Synthesis complete
+          ws.close();
+        }
         return;
       }
 
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => { chunks.push(chunk); });
-      res.on('end', () => {
+      // Binary data: skip header bytes to get raw audio
+      // Edge TTS sends binary with a header prefix
+      const str = data.toString('utf-8', 0, Math.min(200, data.length));
+      const headerEnd = str.indexOf('Path:audio\r\n');
+      if (headerEnd !== -1) {
+        const audioStart = headerEnd + 'Path:audio\r\n'.length;
+        chunks.push(data.subarray(audioStart));
+      } else {
+        chunks.push(data);
+      }
+    });
+
+    ws.on('close', () => {
+      if (chunks.length > 0) {
         const total = Buffer.concat(chunks);
         console.log('[TTS] 收到音频:', total.length, 'bytes');
         fs.writeFileSync(outputFile, total);
         resolve();
-      });
-      res.on('error', reject);
+      } else {
+        reject(new Error('Edge TTS: no audio data received'));
+      }
     });
 
-    req.on('error', (err) => {
-      console.error('[TTS] 网络错误:', err.message);
+    ws.on('error', (err) => {
+      console.error('[TTS] WebSocket error:', err.message);
       reject(err);
     });
-    req.write(ssml);
-    req.end();
+
+    // Send SSML after a short delay to let server process config
+    const checkAndSend = setInterval(() => {
+      if (configSent && ws.readyState === WebSocket.OPEN) {
+        clearInterval(checkAndSend);
+        ws.send(
+          `X-RequestId:${reqId}\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n` + ssml
+        );
+      }
+    }, 10);
+
+    setTimeout(() => {
+      clearInterval(checkAndSend);
+      if (ws.readyState !== WebSocket.CLOSED) {
+        ws.close();
+        reject(new Error('Edge TTS timeout'));
+      }
+    }, 15000);
   });
 }
 
