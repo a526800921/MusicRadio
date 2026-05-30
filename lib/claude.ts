@@ -82,15 +82,21 @@ export function parseClaudeOutput(raw: string): ClaudeOutput {
   };
 }
 
-export function callClaude(prompt: string, timeout = 120000): Promise<ClaudeOutput> {
+export function callClaude(
+  prompt: string,
+  options?: { timeout?: number; model?: string }
+): Promise<ClaudeOutput> {
+  const timeout = options?.timeout ?? 120000;
+  const model = options?.model || process.env.CLAUDE_MODEL || '';
+  const modelFlag = model ? `--model "${model}"` : '';
+
   return new Promise((resolve, reject) => {
-    // Write prompt to temp file, pipe via bash to avoid encoding issues
     const tmpFile = join(tmpdir(), `claude-prompt-${randomUUID()}.txt`);
     const unixPath = tmpFile.replace(/\\/g, '/');
     writeFileSync(tmpFile, prompt, 'utf-8');
 
     const bashPath = findBash();
-    const child = spawn(bashPath, ['-c', `claude -p < "${unixPath}"`], {
+    const child = spawn(bashPath, ['-c', `claude -p ${modelFlag} < "${unixPath}"`], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PATH: process.env.PATH },
       windowsHide: true,

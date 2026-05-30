@@ -33,15 +33,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log('[CONTEXT] 历史:', ctx.recentHistory.replace(/\n/g, ' | '));
 
     // 3. Call Claude
-    console.log('[CLAUDE] 正在请求 AI 推荐...');
+    const model = req.body?.model || process.env.CLAUDE_MODEL || '';
+    console.log('[CLAUDE] 正在请求 AI 推荐...', model ? `model=${model}` : '(default)');
     const t0 = Date.now();
-    const output = await callClaude(buildPrompt({
-      persona: ctx.persona,
-      userContext: ctx.userContext,
-      timeContext: ctx.timeContext,
-      recentHistory: ctx.recentHistory,
-      userInput: message,
-    }));
+    const output = await callClaude(
+      buildPrompt({
+        persona: ctx.persona,
+        userContext: ctx.userContext,
+        timeContext: ctx.timeContext,
+        recentHistory: ctx.recentHistory,
+        userInput: message,
+      }),
+      { model: model || undefined }
+    );
     console.log(`[CLAUDE] 推理完成 (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
     console.log('[CLAUDE] 推荐歌曲:', `${output.play.song_name} - ${output.play.artist}`);
     console.log('[CLAUDE] 播报文案:', output.say);
