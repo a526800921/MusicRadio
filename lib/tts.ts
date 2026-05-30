@@ -1,10 +1,7 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { createHash, randomUUID } from 'crypto';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { writeFileSync, unlinkSync } from 'fs';
+import { createHash } from 'crypto';
 
 const CACHE_DIR = path.join(process.cwd(), 'cache', 'tts');
 
@@ -39,48 +36,71 @@ export async function generateTTS(text: string): Promise<string> {
 
 function synthesizeWindows(text: string, outputFile: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Escape special characters for PowerShell
-    const escaped = text
-      .replace(/"/g, '""')
-      .replace(/'/g, "''");
-
-    // PowerShell script: use System.Speech to synthesize to WAV
-    const psScript = `
+    // Use base64 to avoid encoding hell with Chinese text in PowerShell
+    const psCode = `
+param($text, $outputFile)
 Add-Type -AssemblyName System.Speech
 $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
-
-# Select Chinese voice if available
-$zhVoice = $synth.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'zh-*' } | Select-Object -First 1
-if ($zhVoice) { $synth.SelectVoice($zhVoice.VoiceInfo.Name) }
-
-$synth.SetOutputToWaveFile('${outputFile.replace(/\\/g, '\\\\')}')
-$synth.Speak('${escaped}')
+$zh = $synth.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'zh-*' } | Select-Object -First 1
+if ($zh) { $synth.SelectVoice($zh.VoiceInfo.Name) }
+$dir = Split-Path $outputFile -Parent
+if ($dir -and !(Test-Path $dir)) { New-Item -Force -ItemType Directory $dir | Out-Null }
+$synth.SetOutputToWaveFile($outputFile)
+$synth.Speak($text)
 $synth.Dispose()
 `;
+    // Encode PS script as UTF-16LE base64 for EncodedCommand
+    const psBytes = Buffer.from(psCode, 'utf-8');
+    // Convert to UTF-16LE
+    const utf16le = Buffer.alloc(psBytes.length * 2 + 2);
+    utf16le.writeUInt16LE(0xFEFF, 0); // BOM
+    for (let i = 0; i < psBytes.length; i++) {
+      utf16le.writeUInt16LE(psBytes[i], 2 + i * 2);
+    }
+    const b64 = utf16le.toString('base64');
 
-    const tmpScript = join(tmpdir(), `tts-${randomUUID()}.ps1`);
-    writeFileSync(tmpScript, psScript, 'utf-16le'); // PowerShell needs UTF-16LE with BOM
-
-    const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tmpScript], {
+    // Pass text as argument to avoid encoding issues in script
+    const child = spawn('powershell', [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-EncodedCommand', b64,
+      '-text', text,
+      '-outputFile', outputFile,
+    ], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    let stdout = '';
     let stderr = '';
 
+    child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
     child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
 
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('TTS 合成超时'));
+    }, 30000);
+
     child.on('close', (code: number) => {
-      try { unlinkSync(tmpScript); } catch { /* ignore */ }
+      clearTimeout(timer);
       if (code !== 0) {
-        console.error('[TTS] PowerShell error:', stderr);
-        reject(new Error(`TTS 合成失败: ${stderr.slice(0, 200)}`));
+        console.error('[TTS] PowerShell exit:', code);
+        console.error('[TTS] stderr:', stderr.slice(0, 300));
+        reject(new Error(`TTS 合成失败 (exit ${code})`));
         return;
       }
+      if (!fs.existsSync(outputFile)) {
+        console.error('[TTS] 文件未生成:', outputFile);
+        console.error('[TTS] stdout:', stdout.slice(0, 300));
+        reject(new Error('TTS 音频文件未生成'));
+        return;
+      }
+      console.log('[TTS] 文件大小:', (fs.statSync(outputFile).size / 1024).toFixed(1), 'KB');
       resolve();
     });
 
     child.on('error', (err: Error) => {
-      try { unlinkSync(tmpScript); } catch { /* ignore */ }
+      clearTimeout(timer);
       console.error('[TTS] 启动失败:', err.message);
       reject(err);
     });
