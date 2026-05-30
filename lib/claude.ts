@@ -90,7 +90,7 @@ export function callClaude(prompt: string, timeout = 120000): Promise<ClaudeOutp
     writeFileSync(tmpFile, prompt, 'utf-8');
 
     const bashPath = findBash();
-    const child = spawn(bashPath, ['-c', `cat "${unixPath}" | claude -p`], {
+    const child = spawn(bashPath, ['-c', `claude -p < "${unixPath}"`], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PATH: process.env.PATH },
       windowsHide: true,
