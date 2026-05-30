@@ -21,17 +21,29 @@ export interface SongUrlInfo {
 }
 
 function getCookie(): string {
-  // Priority: env var > cookie file > empty
-  if (process.env.NETEASE_COOKIE) return process.env.NETEASE_COOKIE;
+  let cookie = '';
 
-  const cookieFile = path.join(process.cwd(), 'data', 'netease-cookie.txt');
-  try {
-    if (fs.existsSync(cookieFile)) {
-      return fs.readFileSync(cookieFile, 'utf-8').trim();
-    }
-  } catch { /* ignore */ }
+  // Priority: env var > cookie file
+  if (process.env.NETEASE_COOKIE) {
+    cookie = process.env.NETEASE_COOKIE;
+  } else {
+    const cookieFile = path.join(process.cwd(), 'data', 'netease-cookie.txt');
+    try {
+      if (fs.existsSync(cookieFile)) {
+        cookie = fs.readFileSync(cookieFile, 'utf-8').trim();
+      }
+    } catch { /* ignore */ }
+  }
 
-  return '';
+  if (!cookie) return '';
+
+  // Auto-fix: if cookie is a raw hex string without key=value format,
+  // wrap it as MUSIC_U=<value>. Required for full-quality audio.
+  if (!cookie.includes('=')) {
+    cookie = 'MUSIC_U=' + cookie;
+  }
+
+  return cookie;
 }
 
 export async function searchSongs(keyword: string, limit = 10): Promise<SongInfo[]> {
