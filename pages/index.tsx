@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { Player } from '@/components/Player';
 import { ChatInput } from '@/components/ChatInput';
@@ -26,8 +26,11 @@ export default function Home() {
   const [song, setSong] = useState<SongData>(emptySong);
   const [isLoading, setIsLoading] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
+  const [preloadReady, setPreloadReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<PlayRecord[]>([]);
+  const preloadedRef = useRef<SongData | null>(null);
+  const preloadingRef = useRef(false);
 
   useEffect(() => {
     fetch('/api/history')
@@ -36,13 +39,7 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  const requestSong = useCallback(async (message: string, isAuto: boolean) => {
-    if (isAuto) {
-      setAutoLoading(true);
-    } else {
-      setIsLoading(true);
-    }
-    setError(null);
+  const fetchSong = useCallback(async (message: string): Promise<SongData | null> => {
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -50,53 +47,78 @@ export default function Home() {
         body: JSON.stringify({ message }),
       });
       const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || '请求失败');
-        return;
-      }
-
-      if (data.type === 'CONTROL') {
-        setError('播放控制功能即将推出');
-        return;
-      }
-      if (data.type === 'SEARCH') {
-        setError(`搜索「${data.keyword}」功能即将推出`);
-        return;
-      }
-
-      setSong({
+      if (!res.ok || data.type === 'CONTROL' || data.type === 'SEARCH') return null;
+      return {
         name: data.play.name,
         artist: data.play.artist,
         url: data.play.url,
         reason: data.reason,
         segue: data.segue,
-      });
-
-      setHistory((prev) => [
-        {
-          time: new Date().toISOString(),
-          song_name: data.play.name,
-          artist: data.play.artist,
-          skipped: false,
-        },
-        ...prev,
-      ]);
-    } catch (e: any) {
-      setError(e.message || '网络请求失败');
-    } finally {
-      setIsLoading(false);
-      setAutoLoading(false);
+      };
+    } catch {
+      return null;
     }
   }, []);
+
+  const addToHistory = useCallback((s: SongData) => {
+    setHistory((prev) => [
+      { time: new Date().toISOString(), song_name: s.name, artist: s.artist, skipped: false },
+      ...prev,
+    ]);
+  }, []);
+
+  const preloadNext = useCallback(async () => {
+    if (preloadingRef.current) return;
+    preloadingRef.current = true;
+    setPreloadReady(false);
+    const next = await fetchSong('再来一首，风格跟前一首类似或者互补');
+    if (next) {
+      preloadedRef.current = next;
+      setPreloadReady(true);
+    }
+    preloadingRef.current = false;
+  }, [fetchSong]);
+
+  const requestSong = useCallback(async (message: string, isAuto: boolean) => {
+    if (isAuto) setAutoLoading(true); else setIsLoading(true);
+    setError(null);
+
+    const result = await fetchSong(message);
+    if (!result) {
+      setError('推荐失败，请重试');
+      setIsLoading(false);
+      setAutoLoading(false);
+      return;
+    }
+
+    setSong(result);
+    addToHistory(result);
+    setIsLoading(false);
+    setAutoLoading(false);
+
+    // Preload next song in background
+    preloadedRef.current = null;
+    setPreloadReady(false);
+    preloadNext();
+  }, [fetchSong, addToHistory, preloadNext]);
 
   const handleSubmit = useCallback((message: string) => {
     requestSong(message, false);
   }, [requestSong]);
 
   const handleEnded = useCallback(() => {
-    requestSong('再来一首，风格跟前一首类似或者互补', true);
-  }, [requestSong]);
+    // Use preloaded song if available, otherwise fetch
+    if (preloadedRef.current) {
+      const next = preloadedRef.current;
+      preloadedRef.current = null;
+      setPreloadReady(false);
+      setSong(next);
+      addToHistory(next);
+      preloadNext();
+    } else {
+      requestSong('再来一首，风格跟前一首类似或者互补', true);
+    }
+  }, [requestSong, addToHistory, preloadNext]);
 
   return (
     <>
@@ -130,6 +152,11 @@ export default function Home() {
               onEnded={handleEnded}
               isLoading={autoLoading}
             />
+            {preloadReady && preloadedRef.current && (
+              <p className="text-green-400 text-xs mt-1 text-center">
+                下一首已就绪：{preloadedRef.current.name} - {preloadedRef.current.artist}
+              </p>
+            )}
           </div>
 
           {/* Info panels */}
