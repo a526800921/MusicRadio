@@ -36,36 +36,34 @@ export async function generateTTS(text: string): Promise<string> {
 
 function synthesizeWindows(text: string, outputFile: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Use base64 to avoid encoding hell with Chinese text in PowerShell
-    const psCode = `
-param($text, $outputFile)
-Add-Type -AssemblyName System.Speech
+    // Embed text and path in PowerShell script, encode as UTF-16LE base64
+    const safeText = text.replace(/"/g, '`"').replace(/\$/g, '`$');
+    const safePath = outputFile.replace(/\\/g, '\\\\');
+
+    const psCode =
+`Add-Type -AssemblyName System.Speech
 $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
 $zh = $synth.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'zh-*' } | Select-Object -First 1
 if ($zh) { $synth.SelectVoice($zh.VoiceInfo.Name) }
-$dir = Split-Path $outputFile -Parent
+$dir = Split-Path "${safePath}" -Parent
 if ($dir -and !(Test-Path $dir)) { New-Item -Force -ItemType Directory $dir | Out-Null }
-$synth.SetOutputToWaveFile($outputFile)
-$synth.Speak($text)
+$synth.SetOutputToWaveFile("${safePath}")
+$synth.Speak("${safeText}")
 $synth.Dispose()
 `;
-    // Encode PS script as UTF-16LE base64 for EncodedCommand
-    const psBytes = Buffer.from(psCode, 'utf-8');
-    // Convert to UTF-16LE
-    const utf16le = Buffer.alloc(psBytes.length * 2 + 2);
+
+    // Encode as UTF-16LE base64 for PowerShell -EncodedCommand
+    const utf16le = Buffer.alloc(psCode.length * 2 + 2);
     utf16le.writeUInt16LE(0xFEFF, 0); // BOM
-    for (let i = 0; i < psBytes.length; i++) {
-      utf16le.writeUInt16LE(psBytes[i], 2 + i * 2);
+    for (let i = 0; i < psCode.length; i++) {
+      utf16le.writeUInt16LE(psCode.charCodeAt(i), 2 + i * 2);
     }
     const b64 = utf16le.toString('base64');
 
-    // Pass text as argument to avoid encoding issues in script
     const child = spawn('powershell', [
       '-NoProfile',
       '-ExecutionPolicy', 'Bypass',
       '-EncodedCommand', b64,
-      '-text', text,
-      '-outputFile', outputFile,
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
