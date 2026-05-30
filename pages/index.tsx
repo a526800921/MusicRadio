@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Head from 'next/head';
 import { Player } from '@/components/Player';
 import { ChatInput } from '@/components/ChatInput';
@@ -28,6 +28,13 @@ export default function Home() {
   const [autoLoading, setAutoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<PlayRecord[]>([]);
+
+  useEffect(() => {
+    fetch('/api/history')
+      .then((r) => r.json())
+      .then((data) => setHistory(data.plays || []))
+      .catch(() => {});
+  }, []);
 
   const requestSong = useCallback(async (message: string, isAuto: boolean) => {
     if (isAuto) {
