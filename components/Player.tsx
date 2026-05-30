@@ -24,20 +24,25 @@ export function Player({ songUrl, songName, artist, reason, segue, ttsUrl, onEnd
     audioRef.current.load();
     const playPromise = audioRef.current.play();
     if (playPromise !== undefined && playPromise !== null) {
-      playPromise.catch(() => {
-        setError('自动播放被浏览器阻止，请点击播放按钮');
-      });
+      playPromise.then(() => console.log('[Player] 歌曲开始播放'))
+        .catch(() => setError('自动播放被浏览器阻止，请点击播放按钮'));
     }
 
-    // DJ voiceover: play ~1s after song starts
+    // DJ voiceover
     if (ttsUrl && voiceRef.current) {
+      console.log('[Player] 准备 DJ 播报:', ttsUrl);
       voiceRef.current.load();
+      voiceRef.current.oncanplaythrough = () => console.log('[Player] 播报音频就绪');
+      voiceRef.current.onerror = (e) => console.error('[Player] 播报音频加载失败:', e);
+      voiceRef.current.onplay = () => console.log('[Player] DJ 开始说话');
       setTimeout(() => {
-        if (audioRef.current) audioRef.current.volume = 0.3; // duck song volume
+        if (audioRef.current) audioRef.current.volume = 0.3;
         voiceRef.current?.play()
           .then(() => setVoicePlaying(true))
-          .catch(() => setVoicePlaying(false));
+          .catch((e) => console.log('[Player] 播报自动播放被阻止:', e.message));
       }, 800);
+    } else {
+      console.log('[Player] 无 TTS URL，跳过播报');
     }
   }, [songUrl, ttsUrl]);
 

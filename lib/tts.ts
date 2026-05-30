@@ -4,7 +4,7 @@ import { createHash } from 'crypto';
 import https from 'https';
 
 const CACHE_DIR = path.join(process.cwd(), 'cache', 'tts');
-const VOICE = 'zh-CN-XiaoxiaoNeural'; // Natural Chinese female voice
+const VOICE = 'zh-CN-XiaoxiaoNeural';
 const TTS_URL = 'speech.platform.bing.com';
 
 function textHash(text: string): string {
@@ -22,9 +22,11 @@ export async function generateTTS(text: string): Promise<string> {
   const mp3File = path.join(CACHE_DIR, `${hash}.mp3`);
 
   if (fs.existsSync(mp3File)) {
+    console.log('[TTS] 命中缓存:', hash, `(${(fs.statSync(mp3File).size / 1024).toFixed(1)}KB)`);
     return `/api/tts/${hash}`;
   }
 
+  console.log('[TTS] 开始合成...', `"${text.slice(0, 40)}..."`);
   ensureCacheDir();
 
   const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN">
@@ -36,6 +38,8 @@ export async function generateTTS(text: string): Promise<string> {
   </speak>`;
 
   await downloadTTS(ssml, mp3File);
+  const size = (fs.statSync(mp3File).size / 1024).toFixed(1);
+  console.log('[TTS] 合成完成:', hash, `(${size}KB)`);
   return `/api/tts/${hash}`;
 }
 
@@ -52,20 +56,30 @@ function downloadTTS(ssml: string, outputFile: string): Promise<void> {
       },
     }, (res) => {
       if (res.statusCode !== 200) {
-        reject(new Error(`Edge TTS returned ${res.statusCode}`));
+        let body = '';
+        res.on('data', (c: Buffer) => { body += c.toString(); });
+        res.on('end', () => {
+          console.error('[TTS] HTTP Error', res.statusCode, body.slice(0, 200));
+          reject(new Error(`Edge TTS returned ${res.statusCode}`));
+        });
         return;
       }
 
       const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('data', (chunk: Buffer) => { chunks.push(chunk); });
       res.on('end', () => {
-        fs.writeFileSync(outputFile, Buffer.concat(chunks));
+        const total = Buffer.concat(chunks);
+        console.log('[TTS] 收到音频:', total.length, 'bytes');
+        fs.writeFileSync(outputFile, total);
         resolve();
       });
       res.on('error', reject);
     });
 
-    req.on('error', reject);
+    req.on('error', (err) => {
+      console.error('[TTS] 网络错误:', err.message);
+      reject(err);
+    });
     req.write(ssml);
     req.end();
   });
