@@ -1,1 +1,27 @@
-{"plays":[],"messages":[],"prefs":{"favorite_genres":[],"favorite_artists":[]}}
+{
+  "plays": [
+    {
+      "time": "2026-05-30T17:11:53.471Z",
+      "song_id": "0",
+      "song_name": "好久不见",
+      "artist": "陈奕迅",
+      "skipped": false
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "推荐一首适合现在听的歌",
+      "time": "2026-05-30T17:11:53.472Z"
+    },
+    {
+      "role": "assistant",
+      "content": "深夜了，来首陈奕迅的老歌吧，安静的钢琴配上他低沉的嗓音，特别适合这个时间。",
+      "time": "2026-05-30T17:11:53.479Z"
+    }
+  ],
+  "prefs": {
+    "favorite_genres": [],
+    "favorite_artists": []
+  }
+}
