@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import fs from 'fs';
+import path from 'path';
 import { getTTSFilePath } from '@/lib/tts';
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -12,7 +13,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!filePath) return res.status(404).json({ error: 'TTS audio not found' });
 
   const stat = fs.statSync(filePath);
-  res.setHeader('Content-Type', 'audio/mpeg');
+  const ext = path.extname(filePath);
+  res.setHeader('Content-Type', ext === '.wav' ? 'audio/wav' : 'audio/mpeg');
   res.setHeader('Content-Length', stat.size);
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
