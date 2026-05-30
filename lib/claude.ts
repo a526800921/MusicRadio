@@ -1,4 +1,8 @@
 import { spawn } from 'child_process';
+import { writeFileSync, unlinkSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
 
 export interface ClaudeOutput {
   say: string;
@@ -62,30 +66,32 @@ export function parseClaudeOutput(raw: string): ClaudeOutput {
 
 export function callClaude(prompt: string, timeout = 120000): Promise<ClaudeOutput> {
   return new Promise((resolve, reject) => {
-    const child = spawn('claude', ['-p', prompt], {
+    // Write prompt to temp file, pipe via bash to avoid encoding issues
+    const tmpFile = join(tmpdir(), `claude-prompt-${randomUUID()}.txt`);
+    const unixPath = tmpFile.replace(/\\/g, '/');
+    writeFileSync(tmpFile, prompt, 'utf-8');
+
+    const child = spawn('bash', ['-c', `cat "${unixPath}" | claude -p`], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env },
-      shell: true,
+      env: { ...process.env, PATH: process.env.PATH },
+      windowsHide: true,
     });
 
     let stdout = '';
     let stderr = '';
 
-    child.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
+    child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
+    child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
 
     const timer = setTimeout(() => {
       child.kill();
+      try { unlinkSync(tmpFile); } catch { /* ignore */ }
       reject(new Error('Claude 调用超时'));
     }, timeout);
 
-    child.on('close', (code) => {
+    child.on('close', (code: number) => {
       clearTimeout(timer);
+      try { unlinkSync(tmpFile); } catch { /* ignore */ }
       if (code !== 0) {
         reject(new Error(`Claude 进程退出码 ${code}: ${stderr}`));
         return;
@@ -93,12 +99,13 @@ export function callClaude(prompt: string, timeout = 120000): Promise<ClaudeOutp
       try {
         resolve(parseClaudeOutput(stdout));
       } catch (e: any) {
-        reject(new Error(`Claude 输出解析失败: ${e.message}\n输出: ${stdout.slice(0, 500)}`));
+        reject(new Error(`输出解析失败: ${e.message}\n输出: ${stdout.slice(0, 500)}`));
       }
     });
 
-    child.on('error', (err) => {
+    child.on('error', (err: Error) => {
       clearTimeout(timer);
+      try { unlinkSync(tmpFile); } catch { /* ignore */ }
       reject(new Error(`无法启动 Claude CLI: ${err.message}`));
     });
   });
