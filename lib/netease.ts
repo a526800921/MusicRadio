@@ -54,13 +54,20 @@ export function formatSearchResult(data: any): SongInfo[] {
   }));
 }
 
+// Try from best quality to worst, for SVIP users
+const LEVELS = ['lossless', 'exhigh', 'higher', 'standard'];
+
 export async function getSongUrl(songId: string): Promise<string | null> {
-  try {
-    const result = await song_url_v1({ id: songId, level: 'standard', cookie: getCookie() });
-    return result?.body?.data?.[0]?.url || null;
-  } catch {
-    return null;
+  const cookie = getCookie();
+  for (const level of LEVELS) {
+    try {
+      const result = await song_url_v1({ id: songId, level, cookie });
+      const url = result?.body?.data?.[0]?.url;
+      const code = result?.body?.data?.[0]?.code;
+      if (url && code === 200) return url;
+    } catch { /* try next level */ }
   }
+  return null;
 }
 
 export async function getSongUrlWithInfo(
