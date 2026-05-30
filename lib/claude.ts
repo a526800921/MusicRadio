@@ -60,11 +60,12 @@ export function parseClaudeOutput(raw: string): ClaudeOutput {
   };
 }
 
-export function callClaude(prompt: string, timeout = 60000): Promise<ClaudeOutput> {
+export function callClaude(prompt: string, timeout = 120000): Promise<ClaudeOutput> {
   return new Promise((resolve, reject) => {
     const child = spawn('claude', ['-p', prompt], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
+      shell: true,
     });
 
     let stdout = '';
