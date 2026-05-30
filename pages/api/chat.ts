@@ -18,8 +18,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     // 1. Route intent
     const route = routeIntent(message);
+    console.log('[ROUTER]', `意图: ${route.type}`, route.keyword ? `| 关键词: ${route.keyword}` : '');
 
-    // Non-AI paths: return routing info for client to handle
     if (route.type === 'CONTROL') {
       return res.status(200).json({ type: 'CONTROL' });
     }
@@ -27,41 +27,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ type: 'SEARCH', keyword: route.keyword });
     }
 
-    // 2. AI path: assemble context
+    // 2. Assemble context
     const ctx = assembleContext();
+    console.log('[CONTEXT] 时段:', ctx.timeContext);
+    console.log('[CONTEXT] 历史:', ctx.recentHistory.replace(/\n/g, ' | '));
 
-    // 3. Build prompt
-    const prompt = buildPrompt({
+    // 3. Call Claude
+    console.log('[CLAUDE] 正在请求 AI 推荐...');
+    const t0 = Date.now();
+    const output = await callClaude(buildPrompt({
       persona: ctx.persona,
       userContext: ctx.userContext,
       timeContext: ctx.timeContext,
       recentHistory: ctx.recentHistory,
       userInput: message,
-    });
+    }));
+    console.log(`[CLAUDE] 推理完成 (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+    console.log('[CLAUDE] 推荐歌曲:', `${output.play.song_name} - ${output.play.artist}`);
+    console.log('[CLAUDE] 播报文案:', output.say);
+    console.log('[CLAUDE] 推荐理由:', output.reason);
+    console.log('[CLAUDE] 转场语:', output.segue);
 
-    // 4. Call Claude
-    const output = await callClaude(prompt);
-
-    // 5. Get playback URL
+    // 4. Get playback URL
+    console.log('[NETEASE] 查询播放链接...', `song_id=${output.play.song_id}`);
     const songInfo = await getSongUrlWithInfo(
       output.play.song_id,
       output.play.song_name,
       output.play.artist
     );
+    console.log('[NETEASE]', songInfo?.url ? '获取成功 ✅' : '无播放链接 ⚠️');
 
-    // 6. Persist
-    const now = new Date().toISOString();
+    // 5. Persist
     addPlay({
-      time: now,
+      time: new Date().toISOString(),
       song_id: output.play.song_id,
       song_name: output.play.song_name,
       artist: output.play.artist,
       skipped: false,
     });
-    addMessage({ role: 'user', content: message, time: now });
-    addMessage({ role: 'assistant', content: output.say, time: now });
+    addMessage({ role: 'user', content: message, time: new Date().toISOString() });
+    addMessage({ role: 'assistant', content: output.say, time: new Date().toISOString() });
 
-    // 7. Return
+    // 6. Return
+    console.log('[DONE] 响应已返回\n');
     res.status(200).json({
       say: output.say,
       play: {
@@ -74,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       segue: output.segue,
     });
   } catch (err: any) {
-    console.error('/api/chat error:', err.message);
+    console.error('[ERROR] /api/chat:', err.message);
     res.status(500).json({ error: err.message || '处理请求时出错' });
   }
 }
