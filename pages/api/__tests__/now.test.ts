@@ -1,8 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createMocks } from 'node-mocks-http';
+import fs from 'fs';
+import path from 'path';
 import handler from '../now';
 
+const STATE_PATH = path.join(process.cwd(), 'data', 'state.json');
+
 describe('GET /api/now', () => {
+  beforeEach(() => {
+    const dir = path.dirname(STATE_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(STATE_PATH, JSON.stringify({
+      plays: [],
+      messages: [],
+      prefs: { favorite_genres: [], favorite_artists: [] },
+    }, null, 2));
+  });
   it('returns 200 with now-playing data structure', async () => {
     const { req, res } = createMocks({ method: 'GET' });
     await handler(req, res);
