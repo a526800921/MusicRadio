@@ -1,8 +1,26 @@
-import { spawn } from 'child_process';
-import { writeFileSync, unlinkSync } from 'fs';
+import { spawn, execSync } from 'child_process';
+import { writeFileSync, unlinkSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
+
+function findBash(): string {
+  // Common Git Bash paths on Windows
+  const candidates = [
+    'D:\\Git\\usr\\bin\\bash.exe',
+    'C:\\Program Files\\Git\\usr\\bin\\bash.exe',
+    'C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe',
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  // Fallback: try to find via where command, or just 'bash'
+  try {
+    const found = execSync('where bash 2>nul', { encoding: 'utf-8', shell: 'cmd.exe' }).trim().split('\n')[0];
+    if (found) return found;
+  } catch { /* ignore */ }
+  return 'bash';
+}
 
 export interface ClaudeOutput {
   say: string;
@@ -71,7 +89,8 @@ export function callClaude(prompt: string, timeout = 120000): Promise<ClaudeOutp
     const unixPath = tmpFile.replace(/\\/g, '/');
     writeFileSync(tmpFile, prompt, 'utf-8');
 
-    const child = spawn('bash', ['-c', `cat "${unixPath}" | claude -p`], {
+    const bashPath = findBash();
+    const child = spawn(bashPath, ['-c', `cat "${unixPath}" | claude -p`], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PATH: process.env.PATH },
       windowsHide: true,
