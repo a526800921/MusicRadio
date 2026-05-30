@@ -71,7 +71,17 @@ export default function Home() {
     if (preloadingRef.current) return;
     preloadingRef.current = true;
     setPreloadReady(false);
-    const next = await fetchSong('再来一首，风格跟前一首类似或者互补');
+
+    let next = await fetchSong('再来一首，风格跟前一首类似或者互补');
+
+    // Retry if no playable URL
+    let retries = 0;
+    while (next && !next.url && retries < 3) {
+      retries++;
+      console.log(`[PRELOAD] 无播放链接，重试预加载第 ${retries} 次...`);
+      next = await fetchSong('换一首，跟前一首风格类似或者互补');
+    }
+
     if (next) {
       preloadedRef.current = next;
       setPreloadReady(true);
@@ -79,11 +89,11 @@ export default function Home() {
     preloadingRef.current = false;
   }, [fetchSong]);
 
-  const requestSong = useCallback(async (message: string, isAuto: boolean) => {
+  const playSong = useCallback(async (message: string, isAuto: boolean) => {
     if (isAuto) setAutoLoading(true); else setIsLoading(true);
     setError(null);
 
-    const result = await fetchSong(message);
+    let result = await fetchSong(message);
     if (!result) {
       setError('推荐失败，请重试');
       setIsLoading(false);
@@ -91,34 +101,56 @@ export default function Home() {
       return;
     }
 
+    // If no playable URL, retry up to 3 times
+    let retries = 0;
+    while (!result.url && retries < 3) {
+      retries++;
+      console.log(`[PRELOAD] 无播放链接，重试第 ${retries} 次...`);
+      const next = await fetchSong('换一首，风格跟前一首类似或者互补');
+      if (next) result = next;
+    }
+
     setSong(result);
     addToHistory(result);
     setIsLoading(false);
     setAutoLoading(false);
 
-    // Preload next song in background
+    // Preload next song in background (also retries on null URL)
     preloadedRef.current = null;
     setPreloadReady(false);
     preloadNext();
   }, [fetchSong, addToHistory, preloadNext]);
 
+  const requestSong = useCallback((message: string, isAuto: boolean) => {
+    playSong(message, isAuto);
+  }, [playSong]);
+
   const handleSubmit = useCallback((message: string) => {
     requestSong(message, false);
   }, [requestSong]);
 
-  const handleEnded = useCallback(() => {
+  const handleEnded = useCallback(async () => {
     // Use preloaded song if available, otherwise fetch
     if (preloadedRef.current) {
-      const next = preloadedRef.current;
+      let next = preloadedRef.current;
       preloadedRef.current = null;
       setPreloadReady(false);
+
+      // Skip preloaded songs with no URL
+      let retries = 0;
+      while (!next.url && retries < 2) {
+        retries++;
+        const fresh = await fetchSong('换一首，跟前一首风格类似或者互补');
+        if (fresh) next = fresh;
+      }
+
       setSong(next);
       addToHistory(next);
       preloadNext();
     } else {
-      requestSong('再来一首，风格跟前一首类似或者互补', true);
+      playSong('再来一首，风格跟前一首类似或者互补', true);
     }
-  }, [requestSong, addToHistory, preloadNext]);
+  }, [playSong, addToHistory, fetchSong, preloadNext]);
 
   return (
     <>
