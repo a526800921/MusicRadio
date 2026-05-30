@@ -1,0 +1,14 @@
+{
+  "favorites": {
+    "name": "我的最爱",
+    "songs": []
+  },
+  "work": {
+    "name": "工作专注",
+    "songs": []
+  },
+  "relax": {
+    "name": "放松时刻",
+    "songs": []
+  }
+}
