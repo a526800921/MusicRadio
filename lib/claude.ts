@@ -82,14 +82,7 @@ export function parseClaudeOutput(raw: string): ClaudeOutput {
   };
 }
 
-export function callClaude(
-  prompt: string,
-  options?: { timeout?: number; model?: string }
-): Promise<ClaudeOutput> {
-  const timeout = options?.timeout ?? 120000;
-  const model = options?.model || process.env.CLAUDE_MODEL || '';
-  const modelFlag = model ? `--model "${model}"` : '';
-
+function spawnOnce(prompt: string, modelFlag: string, timeout: number): Promise<{ stdout: string }> {
   return new Promise((resolve, reject) => {
     const tmpFile = join(tmpdir(), `claude-prompt-${randomUUID()}.txt`);
     const unixPath = tmpFile.replace(/\\/g, '/');
@@ -121,11 +114,7 @@ export function callClaude(
         reject(new Error(`Claude 进程退出码 ${code}: ${stderr}`));
         return;
       }
-      try {
-        resolve(parseClaudeOutput(stdout));
-      } catch (e: any) {
-        reject(new Error(`输出解析失败: ${e.message}\n输出: ${stdout.slice(0, 500)}`));
-      }
+      resolve({ stdout });
     });
 
     child.on('error', (err: Error) => {
@@ -134,4 +123,33 @@ export function callClaude(
       reject(new Error(`无法启动 Claude CLI: ${err.message}`));
     });
   });
+}
+
+export async function callClaude(
+  prompt: string,
+  options?: { timeout?: number; model?: string }
+): Promise<ClaudeOutput> {
+  const timeout = options?.timeout ?? 120000;
+  const model = options?.model || process.env.CLAUDE_MODEL || '';
+  const modelFlag = model ? `--model "${model}"` : '';
+  const maxRetries = 2;
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const { stdout } = await spawnOnce(prompt, modelFlag, timeout);
+      return parseClaudeOutput(stdout);
+    } catch (e: any) {
+      lastError = e;
+      const isParseError = e.message?.includes('输出解析失败') || e.message?.includes('无法解析');
+      if (isParseError && attempt < maxRetries) {
+        console.log(`[CLAUDE] 解析失败，重试第 ${attempt + 1} 次...`);
+        continue;
+      }
+      throw e;
+    }
+  }
+
+  throw lastError!;
 }
