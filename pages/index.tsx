@@ -129,28 +129,31 @@ export default function Home() {
     requestSong(message, false);
   }, [requestSong]);
 
+  const playPreloaded = useCallback(async () => {
+    if (!preloadedRef.current) return;
+    let next = preloadedRef.current;
+    preloadedRef.current = null;
+    setPreloadReady(false);
+
+    let retries = 0;
+    while (!next.url && retries < 2) {
+      retries++;
+      const fresh = await fetchSong('换一首，跟前一首风格类似或者互补');
+      if (fresh) next = fresh;
+    }
+
+    setSong(next);
+    addToHistory(next);
+    preloadNext();
+  }, [addToHistory, fetchSong, preloadNext]);
+
   const handleEnded = useCallback(async () => {
-    // Use preloaded song if available, otherwise fetch
     if (preloadedRef.current) {
-      let next = preloadedRef.current;
-      preloadedRef.current = null;
-      setPreloadReady(false);
-
-      // Skip preloaded songs with no URL
-      let retries = 0;
-      while (!next.url && retries < 2) {
-        retries++;
-        const fresh = await fetchSong('换一首，跟前一首风格类似或者互补');
-        if (fresh) next = fresh;
-      }
-
-      setSong(next);
-      addToHistory(next);
-      preloadNext();
+      playPreloaded();
     } else {
       playSong('再来一首，风格跟前一首类似或者互补', true);
     }
-  }, [playSong, addToHistory, fetchSong, preloadNext]);
+  }, [playSong, playPreloaded]);
 
   return (
     <>
@@ -185,9 +188,17 @@ export default function Home() {
               isLoading={autoLoading}
             />
             {preloadReady && preloadedRef.current && (
-              <p className="text-green-400 text-xs mt-1 text-center">
-                下一首已就绪：{preloadedRef.current.name} - {preloadedRef.current.artist}
-              </p>
+              <div className="flex items-center justify-center gap-3 mt-2">
+                <p className="text-green-400 text-xs">
+                  下一首已就绪：{preloadedRef.current.name} - {preloadedRef.current.artist}
+                </p>
+                <button
+                  onClick={playPreloaded}
+                  className="text-xs bg-green-600 hover:bg-green-700 text-white rounded px-3 py-1 transition"
+                >
+                  立即播放
+                </button>
+              </div>
             )}
           </div>
 
