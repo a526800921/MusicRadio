@@ -2,21 +2,32 @@ import fs from 'fs';
 import path from 'path';
 import { getRecentPlays } from './state';
 import { getContextLabel } from './scheduler';
+import { getWeather } from './weather';
 
 export interface AssembledContext {
   persona: string;
   userContext: string;
   timeContext: string;
   recentHistory: string;
+  weatherContext: string;
 }
 
-export function assembleContext(): AssembledContext {
+export async function assembleContext(): Promise<AssembledContext> {
   const persona = readFile('prompt/persona.md');
   const userContext = buildUserContext();
   const timeContext = getContextLabel();
   const recentHistory = buildRecentHistory();
 
-  return { persona, userContext, timeContext, recentHistory };
+  let weatherContext = '';
+  try {
+    const weather = await getWeather();
+    weatherContext = weather.label;
+  } catch {
+    // getWeather already has internal fallback, but catch any unexpected errors
+    weatherContext = '';
+  }
+
+  return { persona, userContext, timeContext, recentHistory, weatherContext };
 }
 
 function readFile(relativePath: string): string {

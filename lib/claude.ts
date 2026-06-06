@@ -1,6 +1,6 @@
 import { spawn, execSync } from 'child_process';
 import { writeFileSync, unlinkSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 
@@ -89,9 +89,15 @@ function spawnOnce(prompt: string, modelFlag: string, timeout: number): Promise<
     writeFileSync(tmpFile, prompt, 'utf-8');
 
     const bashPath = findBash();
+    // Add bash's directory to PATH so companion tools (sed, grep, etc.) are available.
+    // On Windows, Git\usr\bin is not in the system PATH but contains essential MSYS2 tools.
+    const bashDir = dirname(bashPath);
+    const sep = process.platform === 'win32' ? ';' : ':';
+    const extendedPath = bashDir !== '.' ? bashDir + sep + (process.env.PATH || '') : process.env.PATH;
+
     const child = spawn(bashPath, ['-c', `claude -p ${modelFlag} < "${unixPath}"`], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, PATH: process.env.PATH },
+      env: { ...process.env, PATH: extendedPath },
       windowsHide: true,
     });
 

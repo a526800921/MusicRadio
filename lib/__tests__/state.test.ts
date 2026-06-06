@@ -93,9 +93,13 @@ describe('state', () => {
 
   describe('getRecentMessages', () => {
     it('returns recent messages', () => {
+      // Batch write to avoid Windows file lock contention
+      const state = readState();
       for (let i = 0; i < 15; i++) {
-        addMessage({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Msg${i}`, time: `2026-01-01T00:${String(i).padStart(2,'0')}00Z` });
+        state.messages.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Msg${i}`, time: `2026-01-01T00:${String(i).padStart(2,'0')}00Z` });
       }
+      writeState(state);
+
       const recent = getRecentMessages(10);
       expect(recent).toHaveLength(10);
     });

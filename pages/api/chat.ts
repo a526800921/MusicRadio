@@ -29,8 +29,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // 2. Assemble context
-    const ctx = assembleContext();
+    const ctx = await assembleContext();
     console.log('[CONTEXT] 时段:', ctx.timeContext);
+    console.log('[CONTEXT] 天气:', ctx.weatherContext || '(未获取)');
     console.log('[CONTEXT] 历史:', ctx.recentHistory.replace(/\n/g, ' | '));
 
     // 3. Call Claude
